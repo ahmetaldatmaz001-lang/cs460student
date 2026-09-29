@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Breathe - Recovering from Anxiety</title>
+  
+  <!-- XTK (The X Toolkit) -->
+  <script type="text/javascript" src="https://get.goxtk.com/xtk_edge.js"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #000000;
+      color: #ffffff;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    /* 3D WebGL Canvas Container */
+    #container {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      background-color: #000000;
+      cursor: grab;
+    }
+
+    #container:active {
+      cursor: grabbing;
+    }
+
+    /* Transparent UI Layer - pointer-events: none ensures mouse drag rotates camera */
+    #ui-layer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 10;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      align-items: center;
+      padding: 30px 20px 40px;
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      opacity: 0.85;
+      transition: opacity 0.5s ease;
+    }
+
+    .app-title {
+      font-size: 22px;
+      font-weight: 300;
+      letter-spacing: 6px;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.95);
+      text-shadow: 0 0 15px rgba(255, 255, 255, 0.3);
+    }
+
+    .app-subtitle {
+      font-size: 13px;
+      font-weight: 400;
+      letter-spacing: 2px;
+      color: rgba(255, 255, 255, 0.5);
+    }
+
+    /* Center Box Breathing HUD */
+    .center-hud {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      margin-top: -20px;
+    }
+
+    .cycle-badge {
+      font-size: 13px;
+      font-weight: 500;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.6);
+      margin-bottom: 12px;
+      padding: 4px 14px;
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      transition: all 0.5s ease;
+    }
+
+    /* Cycle Progress Dots */
+    .cycle-dots {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .cycle-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.2);
+      transition: all 0.4s ease;
+    }
+
+    .cycle-dot.completed {
+      background: #4ade80;
+      box-shadow: 0 0 8px rgba(74, 222, 128, 0.6);
+    }
+
+    .cycle-dot.active {
+      background: #38bdf8;
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.8);
+      transform: scale(1.3);
+    }
+
+    /* Large Instruction Text */
+    .instruction-text {
+      font-size: 54px;
+      font-weight: 300;
+      letter-spacing: 4px;
+      line-height: 1.1;
+      color: #ffffff;
+      text-shadow: 0 0 25px rgba(255, 255, 255, 0.35);
+      transition: color 0.6s ease, text-shadow 0.6s ease;
+      min-height: 60px;
+    }
+
+    .instruction-text.calm {
+      font-size: 68px;
+      font-weight: 200;
+      letter-spacing: 10px;
+      color: #7dd3fc;
+      text-shadow: 0 0 35px rgba(56, 189, 248, 0.7);
+    }
+
+    .instruction-text.anxiety {
+      color: #f87171;
+      text-shadow: 0 0 25px rgba(239, 68, 68, 0.5);
+    }
+
+    /* Countdown Display */
+    .countdown-number {
+      font-size: 76px;
+      font-weight: 200;
+      letter-spacing: 2px;
+      line-height: 1;
+      margin-top: 6px;
+      color: rgba(255, 255, 255, 0.95);
+      text-shadow: 0 0 30px rgba(255, 255, 255, 0.4);
+      min-height: 80px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .phase-indicator {
+      font-size: 13px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.4);
+      margin-top: 4px;
+    }
+
+    /* Minimalist Box Breathing Visualizer */
+    .box-guide {
+      position: relative;
+      width: 140px;
+      height: 140px;
+      margin: 18px auto 6px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 14px;
+    }
+
+    .box-side {
+      position: absolute;
+      background: rgba(255, 255, 255, 0.15);
+      transition: background 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .box-side.top {
+      top: 0; left: 0; right: 0; height: 3px;
+      border-top-left-radius: 14px; border-top-right-radius: 14px;
+    }
+    .box-side.right {
+      top: 0; right: 0; bottom: 0; width: 3px;
+      border-top-right-radius: 14px; border-bottom-right-radius: 14px;
+    }
+    .box-side.bottom {
+      bottom: 0; left: 0; right: 0; height: 3px;
+      border-bottom-left-radius: 14px; border-bottom-right-radius: 14px;
+    }
+    .box-side.left {
+      top: 0; left: 0; bottom: 0; width: 3px;
+      border-top-left-radius: 14px; border-bottom-left-radius: 14px;
+    }
+
+    .box-side.active {
+      background: #38bdf8;
+      box-shadow: 0 0 12px #38bdf8;
+    }
+
+    /* Bottom Overlay & Controls Hint */
+    .footer {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .instruction-overlay {
+      background: rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 30px;
+      padding: 12px 28px;
+      font-size: 15px;
+      letter-spacing: 1.5px;
+      color: #ffffff;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), inset 0 0 10px rgba(255, 255, 255, 0.05);
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      transition: all 0.4s ease;
+    }
+
+    .key-badge {
+      display: inline-block;
+      padding: 3px 9px;
+      background: rgba(255, 255, 255, 0.16);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 1px;
+      color: #ffffff;
+    }
+
+    .sub-hint {
+      font-size: 12px;
+      letter-spacing: 1.2px;
+      color: rgba(255, 255, 255, 0.4);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 3D WebGL Canvas Container -->
+  <div id="container"></div>
+
+  <!-- UI HUD Overlay -->
+  <div id="ui-layer">
+    
+    <!-- Top Header -->
+    <div class="header">
+      <div class="app-title">Breathe</div>
+      <div class="app-subtitle">Recovering from Anxiety</div>
+    </div>
+
+    <!-- Center Box Breathing Display -->
+    <div class="center-hud">
+      <div class="cycle-badge" id="cycle-badge">Anxiety Phase</div>
+      
+      <!-- 5 Progress Dots for the 5 Cycles -->
+      <div class="cycle-dots" id="cycle-dots">
+        <div class="cycle-dot" id="dot-0"></div>
+        <div class="cycle-dot" id="dot-1"></div>
+        <div class="cycle-dot" id="dot-2"></div>
+        <div class="cycle-dot" id="dot-3"></div>
+        <div class="cycle-dot" id="dot-4"></div>
+      </div>
+
+      <!-- Large Instruction Text -->
+      <div class="instruction-text" id="instruction-text">Mind Racing</div>
+
+      <!-- Countdown -->
+      <div class="countdown-number" id="countdown-number"></div>
+
+      <!-- Box Breathing Perimeter Visualizer -->
+      <div class="box-guide" id="box-guide" style="display: none;">
+        <div class="box-side top" id="side-top"></div>
+        <div class="box-side right" id="side-right"></div>
+        <div class="box-side bottom" id="side-bottom"></div>
+        <div class="box-side left" id="side-left"></div>
+      </div>
+
+      <div class="phase-indicator" id="phase-indicator">Thoughts chaotic & turbulent</div>
+    </div>
+
+    <!-- Bottom Controls & Instruction Overlay -->
+    <div class="footer">
+      <div class="instruction-overlay" id="instruction-overlay">
+        <span>Press <span class="key-badge">SPACE</span> to begin breathing</span>
+      </div>
+      <div class="sub-hint">
+        <span>Mouse drag rotates camera</span> &bull; <span>Scroll zooms</span> &bull; <span>Press <span class="key-badge">R</span> to restart</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Main Application Logic -->
+  <script type="text/javascript">
+    'use strict';
+
+    /**
+     * Column-Major 4x4 Matrix Transformation for XTK Objects
+     * Directly updates cube.transform.matrix Float32Array
+     */
+    function applyCubeTransform(cube, x, y, z, rx, ry, rz, s) {
+      const sVal = (s === undefined) ? 1.0 : s;
+      const cx = Math.cos(rx), sx = Math.sin(rx);
+      const cy = Math.cos(ry), sy = Math.sin(ry);
+      const cz = Math.cos(rz), sz = Math.sin(rz);
+
+      const m = cube.transform.matrix;
+      // Column 0
+      m[0] = (cy * cz) * sVal;
+      m[1] = (cy * sz) * sVal;
+      m[2] = (-sy) * sVal;
+      m[3] = 0;
+      // Column 1
+      m[4] = (sx * sy * cz - cx * sz) * sVal;
+      m[5] = (sx * sy * sz + cx * cz) * sVal;
+      m[6] = (sx * cy) * sVal;
+      m[7] = 0;
+      // Column 2
+      m[8] = (cx * sy * cz + sx * sz) * sVal;
+      m[9] = (cx * sy * sz - sx * cz) * sVal;
+      m[10] = (cx * cy) * sVal;
+      m[11] = 0;
+      // Column 3 (Position Translation)
+      m[12] = x;
+      m[13] = y;
+      m[14] = z;
+      m[15] = 1;
+
+      cube.transform.modified();
+    }
+
+    /**
+     * Smooth Easing (Cosine ease-in-out) for organic meditative breathing
+     */
+    function easeInOutSine(t) {
+      return 0.5 * (1.0 - Math.cos(Math.PI * t));
+    }
+
+    /**
+     * Interpolates color through a soothing multi-stage spectrum
+     * Stage 0: Harsh red/orange
+     * Stage 1: Warm amber / gold
+     * Stage 2: Calming teal / seafoam
+     * Stage 3: Serene blue, green, and luminous white
+     */
+    function interpolateColor(anxietyCol, calmCol, calmness) {
+      const t = Math.max(0, Math.min(1, calmness));
+      if (t <= 0) return anxietyCol.slice();
+      if (t >= 1) return calmCol.slice();
+
+      let cA, cB, localT;
+      if (t < 0.35) {
+        // Red/Orange -> Warm Golden Amber
+        cA = anxietyCol;
+        cB = [1.0, 0.62, 0.12];
+        localT = t / 0.35;
+      } else if (t < 0.70) {
+        // Warm Golden Amber -> Calming Seafoam Teal
+        cA = [1.0, 0.62, 0.12];
+        cB = [0.18, 0.82, 0.68];
+        localT = (t - 0.35) / 0.35;
+      } else {
+        // Calming Teal -> Soft Calm Blue/Green/White
+        cA = [0.18, 0.82, 0.68];
+        cB = calmCol;
+        localT = (t - 0.70) / 0.30;
+      }
+
+      return [
+        cA[0] + (cB[0] - cA[0]) * localT,
+        cA[1] + (cB[1] - cA[1]) * localT,
+        cA[2] + (cB[2] - cA[2]) * localT
+      ];
+    }
+
+    // Palette Presets
+    const ANXIETY_COLORS = [
+      [1.0, 0.12, 0.08], // Fiery Crimson
+      [0.92, 0.05, 0.15], // Deep Blood Red
+      [1.0, 0.28, 0.02], // Blazing Red-Orange
+      [1.0, 0.44, 0.0],  // Harsh Vivid Orange
+      [0.96, 0.20, 0.10], // Volcanic Coral
+      [1.0, 0.58, 0.05]  // Sharp Amber
+    ];
+
+    const CALM_COLORS = [
+      [0.25, 0.72, 1.0],  // Soft Celestial Blue
+      [0.35, 0.65, 0.98], // Calm Sky Blue
+      [0.20, 0.86, 0.62], // Tranquil Mint Green
+      [0.28, 0.84, 0.74], // Gentle Seafoam Green
+      [0.95, 0.98, 1.0],  // Pure Soft White
+      [0.88, 0.94, 0.98]  // Luminous Pearl White
+    ];
+
+    /**
+     * Main Application Initialization
+     */
+    window.addEventListener('load', function() {
+      // Validate XTK framework availability
+      if (typeof X === 'undefined' || typeof X.renderer3D === 'undefined') {
+        alert('Failed to load XTK WebGL framework from CDN.');
+        return;
+      }
+
+      // UI Elements
+      const cycleBadgeEl = document.getElementById('cycle-badge');
+      const instructionTextEl = document.getElementById('instruction-text');
+      const countdownNumberEl = document.getElementById('countdown-number');
+      const phaseIndicatorEl = document.getElementById('phase-indicator');
+      const instructionOverlayEl = document.getElementById('instruction-overlay');
+      const boxGuideEl = document.getElementById('box-guide');
+      const sideTopEl = document.getElementById('side-top');
+      const sideRightEl = document.getElementById('side-right');
+      const sideBottomEl = document.getElementById('side-bottom');
+      const sideLeftEl = document.getElementById('side-left');
+      const cycleDots = [
+        document.getElementById('dot-0'),
+        document.getElementById('dot-1'),
+        document.getElementById('dot-2'),
+        document.getElementById('dot-3'),
+        document.getElementById('dot-4')
+      ];
+
+      // 1. Initialize XTK 3D Renderer with pure black background
+      const r = new X.renderer3D();
+      r.container = 'container';
+      r.init();
+      r.bgColor = [0, 0, 0]; // Black background
+      r.camera.position = [0, 30, 420];
+      r.camera.focus = [0, 0, 0];
+      r.camera.up = [0, 1, 0];
+
+      // 2. Central Breathing Cube
+      // One large white cube in the center
+      const breathingCube = new X.cube();
+      breathingCube.center = [0, 0, 0];
+      breathingCube.lengthX = 55;
+      breathingCube.lengthY = 55;
+      breathingCube.lengthZ = 55;
+      breathingCube.color = [1.0, 1.0, 1.0]; // Pure white
+      breathingCube.opacity = 0.96;
+      breathingCube.caption = 'Breathing Anchor';
+      r.add(breathingCube);
+
+      // Central cube animation state
+      let breathScale = 1.0;
+      let breathRotX = 0;
+      let breathRotY = 0;
+      let breathRotZ = 0;
+
+      // 3. Thought Cubes (~100 cubes of random, very different sizes)
+      const NUM_THOUGHT_CUBES = 100;
+      const thoughtCubes = [];
+
+      for (let i = 0; i < NUM_THOUGHT_CUBES; i++) {
+        const c = new X.cube();
+        c.center = [0, 0, 0];
+
+        // Random, very different sizes: some tiny, some fairly large
+        let baseSize;
+        const randSize = Math.random();
+        if (randSize < 0.28) {
+          // Tiny fleeting thoughts
+          baseSize = 4.0 + Math.random() * 4.0; // 4 to 8
+        } else if (randSize < 0.68) {
+          // Small to medium thoughts
+          baseSize = 9.0 + Math.random() * 8.0; // 9 to 17
+        } else if (randSize < 0.88) {
+          // Medium to large thoughts
+          baseSize = 18.0 + Math.random() * 9.0; // 18 to 27
+        } else {
+          // Fairly large looming thoughts
+          baseSize = 28.0 + Math.random() * 8.0; // 28 to 36
+        }
+
+        c.lengthX = baseSize;
+        c.lengthY = baseSize;
+        c.lengthZ = baseSize;
+        c.opacity = 0.92;
+
+        // Custom simulation metadata
+        c._id = i;
+        c._baseSize = baseSize;
+
+        // Random starting position within chaotic cloud
+        const initRadius = 70 + Math.random() * 120;
+        const theta = Math.random() * Math.PI * 2;
+        const phi = (Math.random() - 0.5) * Math.PI;
+        c._pos = [
+          initRadius * Math.cos(phi) * Math.cos(theta),
+          initRadius * Math.sin(phi),
+          initRadius * Math.cos(phi) * Math.sin(theta)
+        ];
+
+        // Fast erratic initial velocity for anxiety phase
+        const speed = 70 + Math.random() * 90;
+        const vTheta = Math.random() * Math.PI * 2;
+        const vPhi = (Math.random() - 0.5) * Math.PI;
+        c._vel = [
+          speed * Math.cos(vPhi) * Math.cos(vTheta),
+          speed * Math.sin(vPhi),
+          speed * Math.cos(vPhi) * Math.sin(vTheta)
+        ];
+
+        // Rotation & spin
+        c._rot = [Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, Math.random() * Math.PI * 2];
+        c._rotSpeed = [
+          (Math.random() - 0.5) * 6.0,
+          (Math.random() - 0.5) * 6.0,
+          (Math.random() - 0.5) * 6.0
+        ];
+
+        // Palette assignment
+        c._anxietyColor = ANXIETY_COLORS[i % ANXIETY_COLORS.length];
+        c._calmColor = CALM_COLORS[i % CALM_COLORS.length];
+        c.color = c._anxietyColor.slice();
+
+        // Ring assignment for Calm Phase (4. Calm phase: orderly ring)
+        c._ringAngle = (i / NUM_THOUGHT_CUBES) * Math.PI * 2;
+        c._ringRadius = 152 + (Math.random() - 0.5) * 16;
+        c._ringTilt = (Math.random() - 0.5) * 8;
+
+        r.add(c);
+        thoughtCubes.push(c);
+      }
+
+      // 4. Box Breathing State Machine
+      // States: 'anxiety' (initial idle), 'breathing', 'paused', 'calm'
+      let appState = 'anxiety';
+      let completedCycles = 0;
+      let phaseIndex = 0; // 0: In, 1: Hold, 2: Out, 3: Hold
+      let phaseTimer = 0.0;
+      const PHASE_DURATION = 4.0; // 4 seconds per phase
+
+      const BOX_PHASES = [
+        { name: 'Breathe in', action: 'Inhale deeply', side: 'top', type: 'grow' },
+        { name: 'Hold',       action: 'Keep still & steady', side: 'right', type: 'hold-top' },
+        { name: 'Breathe out',action: 'Exhale slowly & release', side: 'bottom', type: 'shrink' },
+        { name: 'Hold',       action: 'Rest in quiet space', side: 'left', type: 'hold-bottom' }
+      ];
+
+      // Calmness metric: 0.0 = pure anxiety, 1.0 = fully calm
+      let currentCalmness = 0.0;
+      let targetCalmness = 0.0;
+
+      // 5. Controls Logic
+      function startBreathing() {
+        if (appState === 'anxiety' || appState === 'calm') {
+          appState = 'breathing';
+          completedCycles = 0;
+          phaseIndex = 0;
+          phaseTimer = 0.0;
+          targetCalmness = 0.0;
+          boxGuideEl.style.display = 'block';
+          instructionOverlayEl.innerHTML = 'Press <span class="key-badge">SPACE</span> to pause &bull; <span class="key-badge">R</span> to restart';
+          updateCycleDots();
+        } else if (appState === 'paused') {
+          appState = 'breathing';
+          instructionOverlayEl.innerHTML = 'Press <span class="key-badge">SPACE</span> to pause &bull; <span class="key-badge">R</span> to restart';
+        } else if (appState === 'breathing') {
+          appState = 'paused';
+          instructionOverlayEl.innerHTML = 'Paused &bull; Press <span class="key-badge">SPACE</span> to resume &bull; <span class="key-badge">R</span> to restart';
+        }
+      }
+
+      function restartAnxietyPhase() {
+        appState = 'anxiety';
+        completedCycles = 0;
+        phaseIndex = 0;
+        phaseTimer = 0.0;
+        currentCalmness = 0.0;
+        targetCalmness = 0.0;
+        breathScale = 1.0;
+
+        boxGuideEl.style.display = 'none';
+        cycleBadgeEl.textContent = 'Anxiety Phase';
+        instructionTextEl.className = 'instruction-text anxiety';
+        instructionTextEl.textContent = 'Mind Racing';
+        countdownNumberEl.textContent = '';
+        phaseIndicatorEl.textContent = 'Thoughts chaotic & turbulent';
+        instructionOverlayEl.innerHTML = 'Press <span class="key-badge">SPACE</span> to begin breathing';
+
+        updateCycleDots();
+
+        // Re-randomize thought cubes velocities & harsh colors
+        for (let i = 0; i < NUM_THOUGHT_CUBES; i++) {
+          const c = thoughtCubes[i];
+          const speed = 70 + Math.random() * 90;
+          const vTheta = Math.random() * Math.PI * 2;
+          const vPhi = (Math.random() - 0.5) * Math.PI;
+          c._vel = [
+            speed * Math.cos(vPhi) * Math.cos(vTheta),
+            speed * Math.sin(vPhi),
+            speed * Math.cos(vPhi) * Math.sin(vTheta)
+          ];
+          c.color = c._anxietyColor.slice();
+        }
+      }
+
+      function updateCycleDots() {
+        for (let i = 0; i < 5; i++) {
+          const dot = cycleDots[i];
+          dot.classList.remove('completed', 'active');
+          if (i < completedCycles) {
+            dot.classList.add('completed');
+          } else if (i === completedCycles && appState === 'breathing') {
+            dot.classList.add('active');
+          }
+        }
+      }
+
+      function updateBoxVisualGuide(activeSide) {
+        sideTopEl.classList.toggle('active', activeSide === 'top');
+        sideRightEl.classList.toggle('active', activeSide === 'right');
+        sideBottomEl.classList.toggle('active', activeSide === 'bottom');
+        sideLeftEl.classList.toggle('active', activeSide === 'left');
+      }
+
+      // Keyboard Controls
+      window.addEventListener('keydown', function(event) {
+        if (event.code === 'Space' || event.key === ' ') {
+          event.preventDefault();
+          startBreathing();
+        } else if (event.code === 'KeyR' || event.key === 'r' || event.key === 'R') {
+          event.preventDefault();
+          restartAnxietyPhase();
+        }
+      });
+
+      // Window Resize Listener
+      window.addEventListener('resize', function() {
+        r.resize();
+      });
+
+      // 6. Main 60 FPS Render Callback Hooked into XTK
+      let lastTimestamp = performance.now();
+      let clockTime = 0.0;
+
+      r.onRender = function() {
+        const now = performance.now();
+        const delta = Math.min((now - lastTimestamp) / 1000.0, 0.1);
+        lastTimestamp = now;
+        clockTime += delta;
+
+        // Smoothly interpolate current calmness toward target
+        currentCalmness += (targetCalmness - currentCalmness) * 0.04;
+
+        // ==========================================
+        // Box Breathing Phase Engine
+        // ==========================================
+        if (appState === 'breathing') {
+          phaseTimer += delta;
+
+          const currentPhase = BOX_PHASES[phaseIndex];
+          const phaseProgress = Math.min(phaseTimer / PHASE_DURATION, 1.0);
+          const secondsRemaining = Math.max(1, Math.ceil(PHASE_DURATION - phaseTimer));
+
+          // Calculate central cube breathing scale
+          // Min scale = 0.70 (compact), Max scale = 1.65 (expanded)
+          const MIN_BREATH_SCALE = 0.70;
+          const MAX_BREATH_SCALE = 1.65;
+
+          if (currentPhase.type === 'grow') {
+            // "Breathe in" (4 seconds): Smoothly GROWS
+            const ease = easeInOutSine(phaseProgress);
+            breathScale = MIN_BREATH_SCALE + (MAX_BREATH_SCALE - MIN_BREATH_SCALE) * ease;
+          } else if (currentPhase.type === 'hold-top') {
+            // "Hold" (4 seconds): Stays still at maximum size
+            breathScale = MAX_BREATH_SCALE;
+          } else if (currentPhase.type === 'shrink') {
+            // "Breathe out" (4 seconds): Smoothly SHRINKS
+            const ease = easeInOutSine(phaseProgress);
+            breathScale = MAX_BREATH_SCALE - (MAX_BREATH_SCALE - MIN_BREATH_SCALE) * ease;
+          } else if (currentPhase.type === 'hold-bottom') {
+            // "Hold" (4 seconds): Stays still at minimum size
+            breathScale = MIN_BREATH_SCALE;
+          }
+
+          // Update HUD Text & Countdown
+          cycleBadgeEl.textContent = `Cycle ${completedCycles + 1} of 5`;
+          instructionTextEl.className = 'instruction-text';
+          instructionTextEl.textContent = currentPhase.name;
+          countdownNumberEl.textContent = secondsRemaining;
+          phaseIndicatorEl.textContent = currentPhase.action;
+          updateBoxVisualGuide(currentPhase.side);
+
+          // Phase Transition after 4 seconds
+          if (phaseTimer >= PHASE_DURATION) {
+            phaseTimer = 0.0;
+            phaseIndex++;
+
+            // If all 4 phases complete (16 seconds) -> full breathing cycle complete!
+            if (phaseIndex >= 4) {
+              phaseIndex = 0;
+              completedCycles++;
+              
+              // 3. Calming: after each full breathing cycle, thought cubes slow down and shift color
+              targetCalmness = Math.min(1.0, completedCycles / 5.0);
+              updateCycleDots();
+
+              // 4. Calm phase: after 5 full cycles
+              if (completedCycles >= 5) {
+                appState = 'calm';
+                targetCalmness = 1.0;
+                boxGuideEl.style.display = 'none';
+                cycleBadgeEl.textContent = '5 Cycles Completed';
+                instructionTextEl.className = 'instruction-text calm';
+                instructionTextEl.textContent = 'Calm';
+                countdownNumberEl.textContent = '';
+                phaseIndicatorEl.textContent = 'Mind at peace &bull; Restored';
+                instructionOverlayEl.innerHTML = 'Press <span class="key-badge">R</span> to restart &bull; <span class="key-badge">SPACE</span> to breathe again';
+                updateCycleDots();
+              }
+            }
+          }
+        } else if (appState === 'anxiety') {
+          // Anxiety resting state
+          breathScale = 1.0;
+          instructionTextEl.className = 'instruction-text anxiety';
+        } else if (appState === 'calm') {
+          // Calm phase gentle pulsing
+          breathScale = 1.15 + 0.15 * Math.sin(clockTime * 0.8);
+          instructionTextEl.className = 'instruction-text calm';
+          instructionTextEl.textContent = 'Calm';
+        }
+
+        // ==========================================
+        // Render Central White Breathing Cube
+        // ==========================================
+        breathRotX += delta * 0.25;
+        breathRotY += delta * 0.35;
+        applyCubeTransform(breathingCube, 0, 0, 0, breathRotX, breathRotY, breathRotZ, breathScale);
+        breathingCube.color = [1.0, 1.0, 1.0];
+
+        // ==========================================
+        // Render & Update Thought Cubes (~100 cubes)
+        // ==========================================
+        const anxietyFactor = Math.max(0, 1.0 - currentCalmness);
+
+        for (let i = 0; i < NUM_THOUGHT_CUBES; i++) {
+          const c = thoughtCubes[i];
+
+          if (appState !== 'calm') {
+            // 1. ANXIETY & CALMING PHASES: Fast, erratic, jittering cubes that slow down after cycles
+            
+            // High erratic jitter proportional to anxiety
+            const jitterMag = anxietyFactor * 35.0;
+            c._vel[0] += (Math.random() - 0.5) * jitterMag;
+            c._vel[1] += (Math.random() - 0.5) * jitterMag;
+            c._vel[2] += (Math.random() - 0.5) * jitterMag;
+
+            // Occasional sharp erratic twitch (simulating racing intrusive thoughts)
+            if (Math.random() < 0.03 * anxietyFactor) {
+              c._vel[0] += (Math.random() - 0.5) * 85.0;
+              c._vel[1] += (Math.random() - 0.5) * 85.0;
+              c._vel[2] += (Math.random() - 0.5) * 85.0;
+            }
+
+            // Spatial containment: soft sphere boundary (radius 60 to 210)
+            const distSq = c._pos[0]*c._pos[0] + c._pos[1]*c._pos[1] + c._pos[2]*c._pos[2];
+            const dist = Math.sqrt(distSq) || 1;
+
+            if (dist > 210) {
+              const pull = (dist - 210) * 0.9;
+              c._vel[0] -= (c._pos[0] / dist) * pull;
+              c._vel[1] -= (c._pos[1] / dist) * pull;
+              c._vel[2] -= (c._pos[2] / dist) * pull;
+            } else if (dist < 60) {
+              // Avoid clipping through the big central cube
+              const push = (60 - dist) * 1.6;
+              c._vel[0] += (c._pos[0] / dist) * push;
+              c._vel[1] += (c._pos[1] / dist) * push;
+              c._vel[2] += (c._pos[2] / dist) * push;
+            }
+
+            // Damping
+            c._vel[0] *= 0.92;
+            c._vel[1] *= 0.92;
+            c._vel[2] *= 0.92;
+
+            // Calming slowdown: speed decreases as calmness rises
+            const speedFactor = 0.28 + anxietyFactor * 1.15;
+            c._pos[0] += c._vel[0] * delta * speedFactor;
+            c._pos[1] += c._vel[1] * delta * speedFactor;
+            c._pos[2] += c._vel[2] * delta * speedFactor;
+
+            // Rotation slows down from erratic tumbling to gentle spin
+            const rotFactor = 0.35 + anxietyFactor * 3.0;
+            c._rot[0] += c._rotSpeed[0] * delta * rotFactor;
+            c._rot[1] += c._rotSpeed[1] * delta * rotFactor;
+            c._rot[2] += c._rotSpeed[2] * delta * rotFactor;
+
+          } else {
+            // 4. CALM PHASE: Thought cubes drift into a slow, orderly ring around the big cube
+            const ringOrbitSpeed = 0.16; // Slow, tranquil rotation
+            const angle = c._ringAngle + clockTime * ringOrbitSpeed;
+            const targetX = c._ringRadius * Math.cos(angle);
+            const targetY = c._ringTilt + Math.sin(angle * 3.0 + clockTime * 0.7) * 9.0;
+            const targetZ = c._ringRadius * Math.sin(angle);
+
+            // Smoothly drift toward ring positions
+            const driftLerp = 0.038;
+            c._pos[0] += (targetX - c._pos[0]) * driftLerp;
+            c._pos[1] += (targetY - c._pos[1]) * driftLerp;
+            c._pos[2] += (targetZ - c._pos[2]) * driftLerp;
+
+            // Synchronized serene rotation
+            c._rot[0] += delta * 0.25;
+            c._rot[1] += delta * 0.40;
+            c._rot[2] += delta * 0.18;
+          }
+
+          // Apply 4x4 matrix transformation
+          applyCubeTransform(c, c._pos[0], c._pos[1], c._pos[2], c._rot[0], c._rot[1], c._rot[2], 1.0);
+
+          // 3. Calming color shift: from harsh reds/oranges toward calm blues and greens
+          c.color = interpolateColor(c._anxietyColor, c._calmColor, currentCalmness);
+        }
+      };
+
+      // 7. Start XTK WebGL Render Loop
+      r.render();
+    });
+  </script>
+</body>
+</html>
