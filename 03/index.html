@@ -8,6 +8,22 @@
         height: 100%;
         overflow: hidden !important;  
       }
+
+      #overlay {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        color: #ffffff;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        font-size: 13px;
+        line-height: 1.5;
+        background: rgba(0, 0, 0, 0.6);
+        padding: 8px 12px;
+        border-radius: 4px;
+        pointer-events: none;
+        z-index: 100;
+        user-select: none;
+      }
     </style>
     
     <script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
@@ -30,16 +46,39 @@
       var LASTOBJECT = null;
       var DRAGGING = false;
       var FLICKERING = false;
+      var WIREFRAME = false;
       var TORUSES = [];
       var toruses = TORUSES;
       var was_flickering = false;
+
+      // Parameters for TorusKnotGeometry
+      var TK_PARAMS = {
+        radius: 10,
+        tube: 3,
+        tubularSegments: 100,
+        radialSegments: 16
+      };
 
       // Expose to window for global access/autograding
       window.LASTOBJECT = LASTOBJECT;
       window.DRAGGING = DRAGGING;
       window.FLICKERING = FLICKERING;
+      window.WIREFRAME = WIREFRAME;
       window.TORUSES = TORUSES;
       window.toruses = toruses;
+
+      function updateOverlay() {
+        var overlay = document.getElementById( 'overlay' );
+        if ( overlay ) {
+          overlay.innerHTML =
+            '<div><strong>Placed Toruses:</strong> ' + TORUSES.length + '</div>' +
+            '<div style="margin-top: 4px;"><strong>TorusKnotGeometry Parameters:</strong></div>' +
+            '<div>&bull; radius: ' + TK_PARAMS.radius + '</div>' +
+            '<div>&bull; tube: ' + TK_PARAMS.tube + '</div>' +
+            '<div>&bull; tubularSegments: ' + TK_PARAMS.tubularSegments + '</div>' +
+            '<div>&bull; radialSegments: ' + TK_PARAMS.radialSegments + '</div>';
+        }
+      }
 
       window.onload = function() {
 
@@ -68,8 +107,16 @@
         scene.add( light );
 
         // 1. Replace the cube with a solid THREE.TorusKnotGeometry mesh using THREE.MeshStandardMaterial
-        var geometry = new THREE.TorusKnotGeometry( 10, 3, 100, 16 );
-        var material = new THREE.MeshStandardMaterial({ color: 0xffffff });
+        var geometry = new THREE.TorusKnotGeometry(
+          TK_PARAMS.radius,
+          TK_PARAMS.tube,
+          TK_PARAMS.tubularSegments,
+          TK_PARAMS.radialSegments
+        );
+        var material = new THREE.MeshStandardMaterial({
+          color: 0xffffff,
+          wireframe: WIREFRAME
+        });
 
         var torus = new THREE.Mesh( geometry, material );
 
@@ -77,6 +124,9 @@
         TORUSES.push( torus );
         LASTOBJECT = torus;
         window.LASTOBJECT = LASTOBJECT;
+
+        // Initialize overlay display
+        updateOverlay();
 
         //
         // The invisible plane for mouse raycasting / unprojecting
@@ -112,7 +162,10 @@
 
             if ( intersects.length > 0 ) {
 
-              var new_material = new THREE.MeshStandardMaterial({ color: 0xff69b4 });
+              var new_material = new THREE.MeshStandardMaterial({
+                color: 0xff69b4,
+                wireframe: WIREFRAME
+              });
               var new_torus = new THREE.Mesh( geometry, new_material );
               new_torus.position.set(
                 intersects[0].point.x,
@@ -128,6 +181,8 @@
 
               DRAGGING = true;
               window.DRAGGING = DRAGGING;
+
+              updateOverlay();
 
             }
 
@@ -184,7 +239,7 @@
 
       };
 
-      // 6. window.onkeypress: pressing f toggles a global FLICKERING boolean
+      // 6. window.onkeypress: f toggles FLICKERING, w toggles WIREFRAME
       window.onkeypress = function( e ){
 
         if ( e.key === 'f' || e.key === 'F' ) {
@@ -200,6 +255,15 @@
             }
           }
 
+        } else if ( e.key === 'w' || e.key === 'W' ) {
+
+          WIREFRAME = !WIREFRAME;
+          window.WIREFRAME = WIREFRAME;
+
+          for ( var t of TORUSES ) {
+            t.material.wireframe = WIREFRAME;
+          }
+
         }
 
       };
@@ -208,7 +272,7 @@
 
         requestAnimationFrame( animate );
 
-        // 6. In animate(), if FLICKERING, randomize opacity of all placed toruses
+        // If FLICKERING, randomize opacity of all placed toruses
         if ( FLICKERING ) {
           for ( var t of TORUSES ) {
             t.material.opacity = Math.random();
@@ -232,5 +296,7 @@
 
     </script>
   </head>
-  <body></body>
+  <body>
+    <div id="overlay"></div>
+  </body>
 </html>
