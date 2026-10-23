@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta content="text/html;charset=utf-8" http-equiv="Content-Type">
+    <meta content="utf-8" http-equiv="encoding">
+    <title>Aquaria: Bioluminescent Depths</title>
+    <style>
+      html, body { 
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        overflow: hidden !important;
+        background-color: #030d1a;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      }
+
+      body {
+        background: radial-gradient(circle at 50% 20%, #082847 0%, #031122 65%, #01060e 100%),
+                    url('https://cs460.org/assignments/04/bg.jpg');
+        background-size: cover;
+        background-blend-mode: overlay;
+      }
+
+      #c {
+        width: 100%;
+        height: 100%;
+        display: block;
+        cursor: crosshair;
+      }
+
+      /* Glassmorphism HUD styling */
+      .hud-container {
+        position: absolute;
+        pointer-events: none;
+        z-index: 10;
+        user-select: none;
+      }
+
+      .hud-panel {
+        background: rgba(4, 18, 36, 0.72);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(80, 190, 255, 0.28);
+        border-radius: 14px;
+        padding: 12px 18px;
+        color: #e3f4ff;
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+        transition: transform 0.2s ease, border-color 0.2s ease;
+      }
+
+      #hud-left {
+        top: 14px;
+        left: 14px;
+      }
+
+      #hud-right {
+        top: 14px;
+        right: 14px;
+        text-align: right;
+      }
+
+      #hud-bottom {
+        bottom: 14px;
+        left: 50%;
+        transform: translateX(-50%);
+        font-size: 12px;
+        letter-spacing: 1px;
+        color: rgba(180, 225, 255, 0.7);
+        text-transform: uppercase;
+      }
+
+      .title {
+        font-size: 16px;
+        font-weight: 700;
+        letter-spacing: 1.5px;
+        color: #7ce5ff;
+        text-shadow: 0 0 12px rgba(100, 220, 255, 0.6);
+        margin-bottom: 4px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .title-dot {
+        width: 8px;
+        height: 8px;
+        background: #ff4757;
+        border-radius: 50%;
+        box-shadow: 0 0 10px #ff4757;
+        display: inline-block;
+        animation: pulseDot 1.8s infinite ease-in-out;
+      }
+
+      @keyframes pulseDot {
+        0%, 100% { transform: scale(1); opacity: 0.9; }
+        50% { transform: scale(1.35); opacity: 1; }
+      }
+
+      .instruction {
+        font-size: 13px;
+        color: #d8f0ff;
+        font-weight: 500;
+        margin-bottom: 3px;
+      }
+
+      .sub-instruction {
+        font-size: 11px;
+        color: rgba(160, 215, 255, 0.75);
+      }
+
+      .stat-row {
+        font-size: 13px;
+        margin: 2px 0;
+        color: #cce9ff;
+      }
+
+      .stat-val {
+        font-weight: 700;
+        font-size: 15px;
+        color: #5cf2bd;
+        text-shadow: 0 0 8px rgba(92, 242, 189, 0.5);
+      }
+
+      .dash-meter-container {
+        width: 140px;
+        height: 6px;
+        background: rgba(255, 255, 255, 0.12);
+        border-radius: 4px;
+        margin-top: 6px;
+        overflow: hidden;
+        border: 1px solid rgba(100, 200, 255, 0.2);
+      }
+
+      .dash-meter-fill {
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, #38ef7d, #11998e);
+        transition: width 0.1s linear;
+      }
+    </style>
+  </head>
+  <script type="text/javascript" src="https://cs460.org/js/glmatrix.js"></script>
+
+  <!-- ==================== FISH SHADERS ==================== -->
+  <script id="vertexshader" type="glsl">
+    attribute vec3 a_position;
+
+    uniform mat4 u_transform;
+    uniform float u_pointsize;
+    uniform float u_time;
+    uniform float u_wiggle_freq;
+    uniform float u_wiggle_amp;
+
+    varying vec3 v_pos;
+
+    void main(void) {
+      vec3 pos = a_position;
+
+      // Realistic swimming undulation:
+      // Wave travels backwards from mid-body to caudal fin (pos.x < 0.1)
+      if (pos.x < 0.15) {
+        float tail_factor = clamp((0.15 - pos.x) / 0.75, 0.0, 1.0);
+        float wave = sin(u_time * u_wiggle_freq - pos.x * 5.5) * u_wiggle_amp * tail_factor;
+        pos.y += wave;
+      }
+
+      v_pos = pos;
+      vec4 final_position = u_transform * vec4(pos, 1.0);
+      gl_Position = final_position;
+      gl_PointSize = u_pointsize;
+    }
+  </script>
+
+  <script id="fragmentshader" type="glsl">
+    precision mediump float;
+
+    uniform vec4 u_color;
+    uniform float u_is_big;
+    uniform float u_time;
+
+    varying vec3 v_pos;
+
+    void main(void) {
+      if (u_is_big < -0.5) {
+        // Eye pupil: solid unshaded
+        gl_FragColor = u_color;
+        return;
+      }
+
+      vec3 col = u_color.rgb;
+
+      // Bioluminescent sheen along the spine and scales
+      float shimmer = sin(v_pos.x * 14.0 + u_time * 4.0) * 0.08;
+      float dorsal_shade = smoothstep(-0.25, 0.25, v_pos.y) * 0.18;
+      col += vec3(dorsal_shade + shimmer);
+
+      if (u_is_big > 0.5) {
+        // Big fish: radiant crimson core with amber bioluminescent pulse
+        float pulse = 0.5 + 0.5 * sin(u_time * 5.0);
+        col += vec3(0.30, 0.04, 0.0) * pulse;
+
+        // Rim luminescence
+        float rim = smoothstep(0.08, 0.32, abs(v_pos.y));
+        col += vec3(0.50, 0.12, 0.04) * rim * 0.45;
+      } else {
+        // Small fish: iridescent oceanic gleam
+        float gleam = max(0.0, sin(v_pos.x * 18.0 + u_time * 3.0)) * 0.18;
+        col += vec3(0.2, 0.4, 0.6) * gleam;
+      }
+
+      gl_FragColor = vec4(clamp(col, 0.0, 1.0), u_color.a);
+    }
+  </script>
+
+  <!-- ==================== CAUSTICS / OCEAN LIGHT SHADER ==================== -->
+  <script id="caustic-vs" type="glsl">
+    attribute vec2 a_quad_pos;
+    varying vec2 v_uv;
+
+    void main(void) {
+      v_uv = (a_quad_pos + 1.0) * 0.5;
+      gl_Position = vec4(a_quad_pos, 0.999, 1.0);
+    }
+  </script>
+
+  <script id="caustic-fs" type="glsl">
+    precision mediump float;
+    varying vec2 v_uv;
+    uniform float u_time;
+
+    void main(void) {
+      vec2 uv = v_uv;
+
+      // Shimmering caustic ripples
+      float t = u_time * 0.65;
+      float c1 = sin((uv.x + uv.y * 0.35) * 15.0 + t * 1.4);
+      float c2 = cos((uv.x * 0.55 - uv.y) * 17.0 - t * 1.1);
+      float c3 = sin((uv.x * 1.1 + uv.y * 1.2) * 19.0 + t * 0.7);
+      float caustic = pow(clamp((c1 + c2 + c3) / 3.0 + 0.5, 0.0, 1.0), 3.5) * 0.28;
+
+      // Soft sunbeams cascading from surface
+      float beam = sin(uv.x * 7.5 + sin(uv.y * 2.8 + t * 0.4) * 1.8 + t * 0.3);
+      beam = pow(clamp(beam * 0.5 + 0.5, 0.0, 1.0), 4.0) * (1.0 - uv.y * 0.65) * 0.22;
+
+      vec3 water_light = vec3(0.2, 0.65, 0.9) * (caustic + beam);
+      float alpha = clamp(caustic * 1.1 + beam * 0.75, 0.0, 0.45);
+
+      gl_FragColor = vec4(water_light, alpha);
+    }
+  </script>
+
+  <!-- ==================== PARTICLE (BUBBLES & FOOD) SHADER ==================== -->
+  <script id="particle-vs" type="glsl">
+    attribute vec3 a_part_pos;   // x, y, type (0=bubble, 1=food, 2=burst)
+    attribute vec4 a_part_color;
+    attribute float a_part_size;
+
+    varying vec4 v_color;
+    varying float v_type;
+
+    void main(void) {
+      v_color = a_part_color;
+      v_type = a_part_pos.z;
+      gl_Position = vec4(a_part_pos.xy, 0.0, 1.0);
+      gl_PointSize = a_part_size;
+    }
+  </script>
+
+  <script id="particle-fs" type="glsl">
+    precision mediump float;
+    varying vec4 v_color;
+    varying float v_type;
+
+    void main(void) {
+      vec2 coord = gl_PointCoord - vec2(0.5);
+      float dist = length(coord);
+      if (dist > 0.5) discard;
+
+      if (v_type < 0.5) {
+        // Translucent bubble with specular highlight & rim
+        float rim = smoothstep(0.32, 0.48, dist) * 0.85;
+        float spec = smoothstep(0.12, 0.0, length(coord - vec2(-0.16, -0.16))) * 0.95;
+        float center = smoothstep(0.5, 0.1, dist) * 0.15;
+        vec3 bcol = v_color.rgb + vec3(spec) + vec3(rim * 0.5);
+        gl_FragColor = vec4(bcol, (rim + spec + center) * v_color.a);
+      } else if (v_type < 1.5) {
+        // Glowing food pellet
+        float glow = smoothstep(0.5, 0.0, dist);
+        float core = smoothstep(0.25, 0.0, dist);
+        vec3 fcol = v_color.rgb * (1.0 + core * 0.9);
+        gl_FragColor = vec4(fcol, glow * v_color.a);
+      } else {
+        // Burst spark
+        float s = smoothstep(0.5, 0.0, dist);
+        gl_FragColor = vec4(v_color.rgb, s * v_color.a);
+      }
+    }
+  </script>
+
+  <script>
+    var c, gl;
+    var v_shader, f_shader, shaderprogram;
+    var caustic_program, particle_program;
+    var quad_buffer, particle_vbo, particle_color_vbo, particle_size_vbo;
+
+    var all_fish = [];
+    var bubbles = [];
+    var food_pellets = [];
+    var burst_particles = [];
+
+    // Game state
+    var score = 0;
+    var fish_fed = 0;
+    var dash_energy = 1.0;
+    var is_dashing = false;
+    var keys_down = {};
+
+    // Physics parameters for the big fish
+    var big_vel_x = 0.0;
+    var big_vel_y = 0.0;
+
+    // Web Audio synthesizer
+    var audioCtx = null;
+    function initAudio() {
+      if (!audioCtx) {
+        var AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (AudioContext) audioCtx = new AudioContext();
+      }
+    }
+
+    function playSound(type) {
+      if (!audioCtx) return;
+      try {
+        var now = audioCtx.currentTime;
+        if (type === 'bubble') {
+          var osc = audioCtx.createOscillator();
+          var gain = audioCtx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(320 + Math.random() * 180, now);
+          osc.frequency.exponentialRampToValueAtTime(750 + Math.random() * 250, now + 0.07);
+          gain.gain.setValueAtTime(0.09, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start(now);
+          osc.stop(now + 0.09);
+        } else if (type === 'eat') {
+          [523.25, 659.25, 783.99].forEach(function(freq, i) {
+            var osc = audioCtx.createOscillator();
+            var gain = audioCtx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(freq, now + i * 0.04);
+            gain.gain.setValueAtTime(0.07, now + i * 0.04);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.04 + 0.28);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start(now + i * 0.04);
+            osc.stop(now + i * 0.04 + 0.32);
+          });
+        }
+      } catch(e) {}
+    }
+
+    // 1. Arrow-key control of the big fish
+    window.onkeydown = function(e) {
+      initAudio();
+      keys_down[e.key] = true;
+      if (!all_fish || !all_fish[0]) return;
+      var offset = all_fish[0][4];
+
+      var step = 0.05;
+      var handled = false;
+
+      if (e.key === 'ArrowUp' || e.code === 'ArrowUp' || e.keyCode === 38 || e.key === 'w' || e.key === 'W') {
+        offset[1] += step;
+        big_vel_y = 0.02;
+        handled = true;
+      } else if (e.key === 'ArrowDown' || e.code === 'ArrowDown' || e.keyCode === 40 || e.key === 's' || e.key === 'S') {
+        offset[1] -= step;
+        big_vel_y = -0.02;
+        handled = true;
+      } else if (e.key === 'ArrowLeft' || e.code === 'ArrowLeft' || e.keyCode === 37 || e.key === 'a' || e.key === 'A') {
+        offset[0] -= step;
+        big_vel_x = -0.02;
+        all_fish[0][6] = 1; // turn to face left
+        handled = true;
+      } else if (e.key === 'ArrowRight' || e.code === 'ArrowRight' || e.keyCode === 39 || e.key === 'd' || e.key === 'D') {
+        offset[0] += step;
+        big_vel_x = 0.02;
+        all_fish[0][6] = -1; // turn to face right
+        handled = true;
+      } else if (e.code === 'Space' || e.key === ' ') {
+        if (dash_energy >= 0.35) {
+          is_dashing = true;
+          dash_energy -= 0.35;
+          spawnBurst(offset[0], offset[1], 15, [0.4, 0.8, 1.0, 0.8]);
+          playSound('bubble');
+        }
+        handled = true;
+      }
+
+      if (handled) {
+        spawnThrustBubble(offset[0], offset[1], all_fish[0][6]);
+      }
+
+      // Clamp inside screen bounds [-1, 1]
+      if (offset[0] < -1) offset[0] = -1;
+      if (offset[0] > 1) offset[0] = 1;
+      if (offset[1] < -1) offset[1] = -1;
+      if (offset[1] > 1) offset[1] = 1;
+    };
+
+    window.onkeyup = function(e) {
+      keys_down[e.key] = false;
+    };
+
+    window.onload = function() {
+      c = document.getElementById('c');
+      c.width = window.innerWidth;
+      c.height = window.innerHeight;
+
+      gl = c.getContext('webgl', { alpha: true, antialias: true });
+      gl.viewport(0, 0, c.width, c.height);
+
+      // Window resize handling
+      window.addEventListener('resize', function() {
+        c.width = window.innerWidth;
+        c.height = window.innerHeight;
+        gl.viewport(0, 0, c.width, c.height);
+      });
+
+      // Canvas click to drop food pellets
+      c.addEventListener('click', function(e) {
+        initAudio();
+        var rect = c.getBoundingClientRect();
+        var x = ((e.clientX - rect.left) / c.width) * 2 - 1;
+        var y = -(((e.clientY - rect.top) / c.height) * 2 - 1);
+        dropFood(x, y);
+      });
+
+      // Shaders compilation helper
+      function buildProgram(vsId, fsId) {
+        var vsElem = document.getElementById(vsId);
+        var fsElem = document.getElementById(fsId);
+        var vsSource = vsElem.textContent || vsElem.innerText;
+        var fsSource = fsElem.textContent || fsElem.innerText;
+
+        var vs = gl.createShader(gl.VERTEX_SHADER);
+        gl.shaderSource(vs, vsSource);
+        gl.compileShader(vs);
+        if (!gl.getShaderParameter(vs, gl.COMPILE_STATUS)) {
+          console.error('Vertex Shader (' + vsId + ') error:', gl.getShaderInfoLog(vs));
+        }
+
+        var fs = gl.createShader(gl.FRAGMENT_SHADER);
+        gl.shaderSource(fs, fsSource);
+        gl.compileShader(fs);
+        if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) {
+          console.error('Fragment Shader (' + fsId + ') error:', gl.getShaderInfoLog(fs));
+        }
+
+        var prog = gl.createProgram();
+        gl.attachShader(prog, vs);
+        gl.attachShader(prog, fs);
+        gl.linkProgram(prog);
+        if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+          console.error('Shader Program (' + vsId + ' + ' + fsId + ') link error:', gl.getProgramInfoLog(prog));
+        }
+        return prog;
+      }
+
+      shaderprogram = buildProgram('vertexshader', 'fragmentshader');
+      caustic_program = buildProgram('caustic-vs', 'caustic-fs');
+      particle_program = buildProgram('particle-vs', 'particle-fs');
+
+      // Fullscreen quad for ocean lighting/caustics
+      var quadVertices = new Float32Array([
+        -1.0, -1.0,
+         1.0, -1.0,
+        -1.0,  1.0,
+        -1.0,  1.0,
+         1.0, -1.0,
+         1.0,  1.0
+      ]);
+      quad_buffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, quad_buffer);
+      gl.bufferData(gl.ARRAY_BUFFER, quadVertices, gl.STATIC_DRAW);
+
+      // Particle dynamic buffers
+      particle_vbo = gl.createBuffer();
+      particle_color_vbo = gl.createBuffer();
+      particle_size_vbo = gl.createBuffer();
+
+      // Initialize ambient rising bubbles
+      for (var b = 0; b < 70; b++) {
+        bubbles.push({
+          x: Math.random() * 2 - 1,
+          y: Math.random() * 2 - 1,
+          size: 6 + Math.random() * 18,
+          speed: 0.002 + Math.random() * 0.004,
+          wobble_speed: 1.5 + Math.random() * 2.5,
+          wobble_amp: 0.015 + Math.random() * 0.025,
+          phase: Math.random() * Math.PI * 2,
+          color: [0.65, 0.88, 1.0, 0.35 + Math.random() * 0.35]
+        });
+      }
+
+      // Create fish ecosystem:
+      // Index 0: The majestic big red fish
+      all_fish = [];
+      all_fish.push(createFish(new Float32Array([0, 0, 0]), new Float32Array([1.0, 0.08, 0.08, 1.0]), 1.0, -1));
+
+      // 100 colorful small fish with varied bioluminescent colors & depths
+      for (var i = 0; i < 100; i++) {
+        var hue_t = Math.random();
+        var r_col, g_col, b_col;
+        if (hue_t < 0.3) {
+          r_col = 0.1 + Math.random() * 0.2; g_col = 0.7 + Math.random() * 0.3; b_col = 0.8 + Math.random() * 0.2; // Cyan/Aqua
+        } else if (hue_t < 0.6) {
+          r_col = 0.9 + Math.random() * 0.1; g_col = 0.6 + Math.random() * 0.3; b_col = 0.1 + Math.random() * 0.2; // Gold/Amber
+        } else if (hue_t < 0.85) {
+          r_col = 0.7 + Math.random() * 0.3; g_col = 0.2 + Math.random() * 0.3; b_col = 0.9 + Math.random() * 0.1; // Violet/Magenta
+        } else {
+          r_col = 0.2 + Math.random() * 0.3; g_col = 0.9 + Math.random() * 0.1; b_col = 0.4 + Math.random() * 0.3; // Emerald
+        }
+
+        var random_color = new Float32Array([r_col, g_col, b_col, 0.95]);
+        var random_offset = new Float32Array([Math.random() * 2 - 1, Math.random() * 2 - 1, 0]);
+        var random_scale = 0.12 + Math.random() * 0.16;
+        var init_dir = (Math.random() > 0.5) ? 1 : -1;
+        all_fish.push(createFish(random_offset, random_color, random_scale, init_dir));
+      }
+
+      animate();
+    };
+
+    function createFish(offset, color, scale, direction) {
+      // Streamlined anatomical fish geometry with dorsal, ventral, and caudal fins
+      var vertices = new Float32Array([
+        // 0: nose
+         0.55,  0.00,  0.0,
+        // 1: upper head
+         0.32,  0.20,  0.0,
+        // 2: lower head
+         0.32, -0.18,  0.0,
+        // 3: dorsal body
+         0.05,  0.26,  0.0,
+        // 4: ventral body
+         0.05, -0.22,  0.0,
+        // 5: dorsal fin tip
+        -0.08,  0.44,  0.0,
+        // 6: dorsal fin base
+        -0.12,  0.20,  0.0,
+        // 7: ventral fin tip
+        -0.05, -0.38,  0.0,
+        // 8: ventral fin base
+        -0.14, -0.16,  0.0,
+        // 9: rear upper peduncle
+        -0.30,  0.12,  0.0,
+        // 10: rear lower peduncle
+        -0.30, -0.12,  0.0,
+        // 11: upper tail tip
+        -0.58,  0.34,  0.0,
+        // 12: tail fork center
+        -0.45,  0.00,  0.0,
+        // 13: lower tail tip
+        -0.58, -0.34,  0.0
+      ]);
+
+      var indices = new Uint8Array([
+        0, 1, 2,     // head
+        1, 3, 2,     // mid upper
+        3, 4, 2,     // mid lower
+        3, 5, 6,     // dorsal fin
+        4, 8, 7,     // ventral fin
+        3, 6, 4,     // rear body 1
+        6, 8, 4,     // rear body 2
+        6, 9, 10,    // peduncle upper
+        6, 10, 8,    // peduncle lower
+        9, 11, 12,   // caudal fin top
+        9, 12, 10,   // caudal fin center
+        10, 12, 13   // caudal fin bottom
+      ]);
+
+      var v_buffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, v_buffer);
+      gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+      gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+      var i_buffer = gl.createBuffer();
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, i_buffer);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+
+      // Eye vertex position
+      var eye_vertex = new Float32Array([0.30, 0.08, 0.0]);
+      if (direction == -1) {
+        eye_vertex = new Float32Array([0.30, -0.08, 0.0]);
+      }
+      var eye_v_buffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, eye_v_buffer);
+      gl.bufferData(gl.ARRAY_BUFFER, eye_vertex, gl.STATIC_DRAW);
+      gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+      return [v_buffer, i_buffer, eye_v_buffer, color, offset, scale, direction];
+    }
+
+    function dropFood(x, y) {
+      food_pellets.push({
+        x: x,
+        y: y,
+        speed: 0.003 + Math.random() * 0.002,
+        color: [1.0, 0.85, 0.25, 0.95],
+        size: 9.0
+      });
+      playSound('bubble');
+    }
+
+    function spawnBurst(x, y, count, color) {
+      for (var i = 0; i < count; i++) {
+        var angle = Math.random() * Math.PI * 2;
+        var spd = 0.006 + Math.random() * 0.016;
+        burst_particles.push({
+          x: x,
+          y: y,
+          vx: Math.cos(angle) * spd,
+          vy: Math.sin(angle) * spd,
+          life: 1.0,
+          decay: 0.02 + Math.random() * 0.03,
+          size: 4 + Math.random() * 8,
+          color: color || [0.4, 0.9, 1.0, 0.9]
+        });
+      }
+    }
+
+    function spawnThrustBubble(x, y, direction) {
+      var tail_x = x - direction * 0.2;
+      burst_particles.push({
+        x: tail_x + (Math.random() - 0.5) * 0.05,
+        y: y + (Math.random() - 0.5) * 0.05,
+        vx: -direction * (0.003 + Math.random() * 0.005),
+        vy: (Math.random() - 0.5) * 0.004,
+        life: 1.0,
+        decay: 0.03 + Math.random() * 0.02,
+        size: 7 + Math.random() * 10,
+        color: [0.7, 0.92, 1.0, 0.6]
+      });
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      var time = performance.now() * 0.001;
+
+      // Smooth keyboard gliding for the big fish
+      var accel = is_dashing ? 0.006 : 0.0025;
+      if (keys_down['ArrowUp'] || keys_down['w'] || keys_down['W']) big_vel_y += accel;
+      if (keys_down['ArrowDown'] || keys_down['s'] || keys_down['S']) big_vel_y -= accel;
+      if (keys_down['ArrowLeft'] || keys_down['a'] || keys_down['A']) {
+        big_vel_x -= accel;
+        all_fish[0][6] = 1;
+      }
+      if (keys_down['ArrowRight'] || keys_down['d'] || keys_down['D']) {
+        big_vel_x += accel;
+        all_fish[0][6] = -1;
+      }
+
+      // Drag / friction in water
+      big_vel_x *= 0.91;
+      big_vel_y *= 0.91;
+
+      // Dash recovery
+      if (dash_energy < 1.0) {
+        dash_energy = Math.min(1.0, dash_energy + 0.004);
+        var dashMeter = document.getElementById('dash-meter');
+        if (dashMeter) dashMeter.style.width = (dash_energy * 100) + '%';
+      }
+      is_dashing = false;
+
+      // Apply velocity to big fish
+      all_fish[0][4][0] += big_vel_x;
+      all_fish[0][4][1] += big_vel_y;
+      all_fish[0][4][0] = Math.max(-1, Math.min(1, all_fish[0][4][0]));
+      all_fish[0][4][1] = Math.max(-1, Math.min(1, all_fish[0][4][1]));
+
+      // Clear frame
+      gl.clearColor(0.0, 0.0, 0.0, 0.0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+
+      gl.enable(gl.BLEND);
+      gl.blendEquation(gl.FUNC_ADD);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      gl.disable(gl.DEPTH_TEST);
+
+      // ==================== 1. DRAW CAUSTICS & OCEAN LIGHT ====================
+      gl.useProgram(caustic_program);
+      var quadPosLoc = gl.getAttribLocation(caustic_program, 'a_quad_pos');
+      gl.enableVertexAttribArray(quadPosLoc);
+      gl.bindBuffer(gl.ARRAY_BUFFER, quad_buffer);
+      gl.vertexAttribPointer(quadPosLoc, 2, gl.FLOAT, false, 0, 0);
+
+      var causticTimeLoc = gl.getUniformLocation(caustic_program, 'u_time');
+      gl.uniform1f(causticTimeLoc, time);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      gl.disableVertexAttribArray(quadPosLoc);
+
+      // ==================== 2. DRAW FISH ====================
+      gl.useProgram(shaderprogram);
+      var a_position = gl.getAttribLocation(shaderprogram, 'a_position');
+      var u_transform = gl.getUniformLocation(shaderprogram, 'u_transform');
+      var u_pointsize = gl.getUniformLocation(shaderprogram, 'u_pointsize');
+      var u_color = gl.getUniformLocation(shaderprogram, 'u_color');
+      var u_time = gl.getUniformLocation(shaderprogram, 'u_time');
+      var u_wiggle_freq = gl.getUniformLocation(shaderprogram, 'u_wiggle_freq');
+      var u_wiggle_amp = gl.getUniformLocation(shaderprogram, 'u_wiggle_amp');
+      var u_is_big = gl.getUniformLocation(shaderprogram, 'u_is_big');
+
+      gl.enableVertexAttribArray(a_position);
+      gl.uniform1f(u_time, time);
+
+      var big_pos = all_fish[0][4];
+
+      for (var r = 0; r < all_fish.length; r++) {
+        var current_fish = all_fish[r];
+        var current_v_buffer = current_fish[0];
+        var current_i_buffer = current_fish[1];
+        var current_eye_v_buffer = current_fish[2];
+        var current_color = current_fish[3];
+        var current_offset = current_fish[4];
+        var current_scale = current_fish[5];
+        var current_direction = current_fish[6];
+
+        // 2. Skip automatic movement for the big fish (r == 0)
+        if (r != 0) {
+          // Food attraction logic for small fish
+          if (food_pellets.length > 0) {
+            var nearest = food_pellets[0];
+            var dx = nearest.x - current_offset[0];
+            var dy = nearest.y - current_offset[1];
+            var distToFood = Math.hypot(dx, dy);
+            if (distToFood < 0.45) {
+              current_offset[0] += (dx / distToFood) * 0.006;
+              current_offset[1] += (dy / distToFood) * 0.006;
+              current_direction = (dx < 0) ? 1 : -1;
+            } else {
+              current_offset[0] += 0.01 * -current_direction;
+              current_offset[1] += (Math.random() - Math.random()) * 0.005;
+            }
+          } else {
+            // Natural schooling swim
+            current_offset[0] += 0.01 * -current_direction;
+            current_offset[1] += (Math.random() - Math.random()) * 0.005;
+          }
+
+          // Screen wrap / direction turn
+          if (current_offset[0] > 1.25) {
+            current_offset[0] = -1.25;
+            current_offset[1] = Math.random() * 2 - 1;
+          } else if (current_offset[0] < -1.25) {
+            current_offset[0] = 1.25;
+            current_offset[1] = Math.random() * 2 - 1;
+          }
+
+          // Gentle avoidance from big fish mouth
+          var distToBig = Math.hypot(current_offset[0] - big_pos[0], current_offset[1] - big_pos[1]);
+          if (distToBig < 0.22) {
+            // Big fish eats small fish!
+            score += 100;
+            fish_fed += 1;
+            document.getElementById('score-val').innerText = score;
+            document.getElementById('fed-val').innerText = fish_fed;
+
+            spawnBurst(current_offset[0], current_offset[1], 18, [1.0, 0.4, 0.4, 0.85]);
+            playSound('eat');
+
+            // Respawn on opposite side
+            current_offset[0] = -current_direction * 1.2;
+            current_offset[1] = Math.random() * 2 - 1;
+          }
+        }
+
+        // Connect Fish Geometry
+        gl.bindBuffer(gl.ARRAY_BUFFER, current_v_buffer);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, current_i_buffer);
+        gl.vertexAttribPointer(a_position, 3, gl.FLOAT, false, 0, 0);
+
+        // Dynamic tail wiggle frequency & amplitude
+        var wiggleFreq = (r == 0) ? (7.0 + Math.hypot(big_vel_x, big_vel_y) * 250.0) : (6.0 + (r % 5) * 1.2);
+        var wiggleAmp = (r == 0) ? 0.09 : 0.06;
+        gl.uniform1f(u_wiggle_freq, wiggleFreq);
+        gl.uniform1f(u_wiggle_amp, wiggleAmp);
+        gl.uniform1f(u_is_big, (r == 0) ? 1.0 : 0.0);
+
+        var theta = (r == 0) ? (big_vel_y * 12.0) : (Math.sin(time * 2.0 + r) * 0.06);
+        var transform = [
+          current_direction * current_scale * Math.cos(theta), Math.sin(theta), 0, 0,
+          -Math.sin(theta), current_direction * current_scale * Math.cos(theta), 0, 0,
+          0, 0, current_direction * current_scale * 1, 0,
+          current_offset[0], current_offset[1], current_offset[2], 1
+        ];
+        gl.uniformMatrix4fv(u_transform, false, new Float32Array(transform));
+
+        if (r == 0) {
+          current_color = new Float32Array([1.0, 0.08, 0.08, 1.0]);
+        }
+        gl.uniform4fv(u_color, current_color);
+
+        // Draw fish body (12 triangles = 36 vertices)
+        gl.drawElements(gl.TRIANGLES, 36, gl.UNSIGNED_BYTE, 0);
+
+        // Draw fish eye
+        gl.uniform1f(u_is_big, -1.0);
+        gl.uniform4fv(u_color, new Float32Array([0.05, 0.05, 0.1, 0.95]));
+        var eyeSize = (r == 0) ? (current_scale * 18.0) : (current_scale * 24.0);
+        gl.uniform1f(u_pointsize, eyeSize);
+        gl.bindBuffer(gl.ARRAY_BUFFER, current_eye_v_buffer);
+        gl.vertexAttribPointer(a_position, 3, gl.FLOAT, false, 0, 0);
+        gl.drawArrays(gl.POINTS, 0, 1);
+      }
+      gl.disableVertexAttribArray(a_position);
+
+      // ==================== 3. DRAW PARTICLES (BUBBLES & FOOD) ====================
+      var part_positions = [];
+      var part_colors = [];
+      var part_sizes = [];
+
+      // Update & collect ambient bubbles
+      for (var b = 0; b < bubbles.length; b++) {
+        var bb = bubbles[b];
+        bb.y += bb.speed;
+        if (bb.y > 1.15) {
+          bb.y = -1.15;
+          bb.x = Math.random() * 2 - 1;
+        }
+        var draw_x = bb.x + Math.sin(time * bb.wobble_speed + bb.phase) * bb.wobble_amp;
+        part_positions.push(draw_x, bb.y, 0.0); // type 0 = bubble
+        part_colors.push(bb.color[0], bb.color[1], bb.color[2], bb.color[3]);
+        part_sizes.push(bb.size);
+      }
+
+      // Update & collect food pellets
+      for (var f = food_pellets.length - 1; f >= 0; f--) {
+        var fp = food_pellets[f];
+        fp.y -= fp.speed;
+
+        // Big fish eats food
+        if (Math.hypot(fp.x - big_pos[0], fp.y - big_pos[1]) < 0.12) {
+          score += 25;
+          document.getElementById('score-val').innerText = score;
+          spawnBurst(fp.x, fp.y, 10, [1.0, 0.85, 0.2, 0.9]);
+          playSound('eat');
+          food_pellets.splice(f, 1);
+          continue;
+        }
+
+        if (fp.y < -1.15) {
+          food_pellets.splice(f, 1);
+          continue;
+        }
+
+        part_positions.push(fp.x, fp.y, 1.0); // type 1 = food
+        part_colors.push(fp.color[0], fp.color[1], fp.color[2], fp.color[3]);
+        part_sizes.push(fp.size);
+      }
+
+      // Update & collect burst sparks
+      for (var p = burst_particles.length - 1; p >= 0; p--) {
+        var bp = burst_particles[p];
+        bp.x += bp.vx;
+        bp.y += bp.vy;
+        bp.life -= bp.decay;
+        if (bp.life <= 0) {
+          burst_particles.splice(p, 1);
+          continue;
+        }
+        part_positions.push(bp.x, bp.y, 2.0); // type 2 = burst
+        part_colors.push(bp.color[0], bp.color[1], bp.color[2], bp.color[3] * bp.life);
+        part_sizes.push(bp.size * bp.life);
+      }
+
+      if (part_positions.length > 0) {
+        gl.useProgram(particle_program);
+
+        var a_part_pos = gl.getAttribLocation(particle_program, 'a_part_pos');
+        var a_part_color = gl.getAttribLocation(particle_program, 'a_part_color');
+        var a_part_size = gl.getAttribLocation(particle_program, 'a_part_size');
+
+        gl.enableVertexAttribArray(a_part_pos);
+        gl.bindBuffer(gl.ARRAY_BUFFER, particle_vbo);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(part_positions), gl.DYNAMIC_DRAW);
+        gl.vertexAttribPointer(a_part_pos, 3, gl.FLOAT, false, 0, 0);
+
+        gl.enableVertexAttribArray(a_part_color);
+        gl.bindBuffer(gl.ARRAY_BUFFER, particle_color_vbo);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(part_colors), gl.DYNAMIC_DRAW);
+        gl.vertexAttribPointer(a_part_color, 4, gl.FLOAT, false, 0, 0);
+
+        gl.enableVertexAttribArray(a_part_size);
+        gl.bindBuffer(gl.ARRAY_BUFFER, particle_size_vbo);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(part_sizes), gl.DYNAMIC_DRAW);
+        gl.vertexAttribPointer(a_part_size, 1, gl.FLOAT, false, 0, 0);
+
+        gl.drawArrays(gl.POINTS, 0, part_positions.length / 3);
+
+        gl.disableVertexAttribArray(a_part_pos);
+        gl.disableVertexAttribArray(a_part_color);
+        gl.disableVertexAttribArray(a_part_size);
+      }
+    }
+  </script>
+
+  <body>
+    <!-- Top-Left HUD Card -->
+    <div id="hud-left" class="hud-container hud-panel">
+      <div class="title">
+        <span class="title-dot"></span>
+        <span>AQUARIA : DEPTHS</span>
+      </div>
+      <div class="instruction">Use arrow keys to steer the big fish</div>
+      <div class="sub-instruction">WASD also supported &bull; Space to Dash &bull; Click to Drop Food</div>
+      <div class="dash-meter-container" title="Dash Energy">
+        <div id="dash-meter" class="dash-meter-fill"></div>
+      </div>
+    </div>
+
+    <!-- Top-Right Score & Stats Card -->
+    <div id="hud-right" class="hud-container hud-panel">
+      <div class="stat-row">Score: <span id="score-val" class="stat-val">0</span></div>
+      <div class="stat-row">Fish Fed: <span id="fed-val" class="stat-val">0</span></div>
+    </div>
+
+    <!-- Bottom Depth Overlay -->
+    <div id="hud-bottom" class="hud-container">
+      &bull; WebGL Bioluminescent Aquarium &bull;
+    </div>
+
+    <canvas id="c"></canvas>
+  </body>
+</html>

@@ -20,6 +20,16 @@
         width: 100%;
         height: 100%;
       }
+
+      #overlay {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        color: white;
+        font-family: sans-serif;
+        font-size: 14px;
+        z-index: 10;
+      }
     </style>
   </head>
   <script type="text/javascript" src="https://cs460.org/js/glmatrix.js"></script>
@@ -56,6 +66,27 @@
     var c, gl;
     var v_shader, f_shader, shaderprogram;
     var vertices, indices, v_buffer, i_buffer;
+    var all_fish = [];
+
+    window.onkeydown = function(e) {
+      if (!all_fish || !all_fish[0]) return;
+      var offset = all_fish[0][4];
+
+      if (e.key === 'ArrowUp' || e.code === 'ArrowUp' || e.keyCode === 38) {
+        offset[1] += 0.05;
+      } else if (e.key === 'ArrowDown' || e.code === 'ArrowDown' || e.keyCode === 40) {
+        offset[1] -= 0.05;
+      } else if (e.key === 'ArrowLeft' || e.code === 'ArrowLeft' || e.keyCode === 37) {
+        offset[0] -= 0.05;
+      } else if (e.key === 'ArrowRight' || e.code === 'ArrowRight' || e.keyCode === 39) {
+        offset[0] += 0.05;
+      }
+
+      if (offset[0] < -1) offset[0] = -1;
+      if (offset[0] > 1) offset[0] = 1;
+      if (offset[1] < -1) offset[1] = -1;
+      if (offset[1] > 1) offset[1] = 1;
+    };
 
     window.onload = function() {
 
@@ -200,13 +231,15 @@
         var current_direction = current_buffers[6];
 
         // update offsets
-        current_offset[0] += 0.01;
-        current_offset[1] += 0.1*Math.random();
-        current_offset[1] -= 0.1*Math.random();
-        if (current_offset[0] >= 1) {
-          current_direction = -1;
+        if (r != 0) {
+          current_offset[0] += 0.01;
+          current_offset[1] += 0.1*Math.random();
+          current_offset[1] -= 0.1*Math.random();
+          if (current_offset[0] >= 1) {
+            current_direction = -1;
+          }
+          current_offset[0] *= current_direction;
         }
-        current_offset[0] *= current_direction;
         
 
 
@@ -276,6 +309,7 @@
 
   </script>
   <body>
+    <div id="overlay">Use arrow keys to steer the big fish</div>
     <canvas id="c"></canvas>
   </body>
 </html>
